@@ -1,0 +1,1 @@
+-- Demo data ported from the prototype (campsites, users, bookings, reviews ...)

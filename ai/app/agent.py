@@ -1,0 +1,1 @@
+# Google ADK LlmAgent: Gemini on Vertex AI + tools from app/tools.py

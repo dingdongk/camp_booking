@@ -1,0 +1,7 @@
+planning/
+node_modules/
+.env
+.DS_Store
+Thumbs.db
+database/docker/volumes/db/data/
+database/docker/volumes/storage/

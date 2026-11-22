@@ -1,0 +1,1 @@
+# Builds an in-memory ADK session from the history sent by the backend (stateless per request)
