@@ -1,13 +1,16 @@
+# Development stack: `docker compose up` — code is mounted from each folder and reloads on save.
+# Each service reads the .env in its own folder; there is no .env at the repo root.
+# Production images are built from each service's Dockerfile when deploying.
 name: vietcamp
 
 include:
+  # Supabase (Postgres, Auth, Storage, API gateway, Studio) — reads database/docker/.env
   - database/docker/docker-compose.yml
 
 services:
   migrate:
     build: ./database
-    environment:
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
+    env_file: ./database/.env
     depends_on:
       db:
         condition: service_healthy
@@ -18,16 +21,13 @@ services:
     restart: "no"
 
   backend:
-    build: ./backend
-    environment:
-      PORT: 4000
-      CORS_ORIGIN: http://localhost:5173
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable
-      SUPABASE_URL: http://kong:8000
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      AI_SERVICE_URL: http://ai:8080
-      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN}
-      TOOL_API_TOKEN: ${TOOL_API_TOKEN}
+    image: node:22-slim
+    working_dir: /app
+    command: sh -c "npm install && npm run dev:docker"
+    env_file: ./backend/.env
+    volumes:
+      - ./backend:/app
+      - /app/node_modules # Linux dependencies stay in the container, separate from Windows node_modules
     ports:
       - "4000:4000"
     depends_on:
@@ -35,30 +35,29 @@ services:
         condition: service_completed_successfully
 
   ai:
-    build: ./ai
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    working_dir: /app
+    command: sh -c "uv sync && uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
+    env_file: ./ai/.env
     environment:
-      PORT: 8080
-      GOOGLE_GENAI_USE_VERTEXAI: "TRUE"
-      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
-      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION}
-      GEMINI_MODEL: ${GEMINI_MODEL}
-      GOOGLE_APPLICATION_CREDENTIALS: /gcp/application_default_credentials.json
-      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN}
-      TOOL_API_TOKEN: ${TOOL_API_TOKEN}
-      BACKEND_TOOLS_URL: http://backend:4000/internal/tools
+      WATCHFILES_FORCE_POLLING: "true"
+      UV_LINK_MODE: copy
     volumes:
-      - ${GCLOUD_CONFIG_DIR}:/gcp:ro
+      - ./ai:/app
+      - /app/.venv
+      # gcloud application default credentials (Windows path; on macOS/Linux use ~/.config/gcloud)
+      - ${APPDATA}/gcloud:/gcp:ro
     ports:
       - "8080:8080"
 
   frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_URL: http://localhost:4000/api/v1
-        VITE_SUPABASE_URL: http://localhost:${KONG_HTTP_PORT}
-        VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
+    image: node:22-slim
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    environment:
+      VITE_USE_POLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     ports:
-      - "5173:80"
-    depends_on:
-      - backend
+      - "5173:5173"
